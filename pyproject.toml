@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rock-synth"
-version = "0.1.1"
+version = "0.1.0"
 description = "Controllable and reproducible synthetic rock scene generation with BlenderProc."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "blenderproc==2.8.0",
-  "h5py",
-  "matplotlib",
+  "PyYAML>=6",
+  "Pillow>=10",
+  "opencv-python-headless>=4.8,<4.12",
   "numpy>=1.24,<2",
 ]
 
@@ -33,4 +34,4 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/generate_scene.py" = ["I001"]
+"generate.py" = ["I001"]

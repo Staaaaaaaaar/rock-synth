@@ -33,3 +33,5 @@ renders/
 # Asset pipeline caches and generated preparations
 /assets/cache/
 /assets/prepared/
+/assets/rocks/
+/assets/surfaces/

@@ -1,69 +1,94 @@
-# 场景资产
+# 项目内部资产格式
 
-项目使用程序化高度场地形和纯 CC0 扫描岩石。岩石生成仅接受许可明确、可重新下载并可校验哈希的预处理资产。
+资产按目录管理，不使用来源记录或全局清单。岩石按集合分组，启动时递归、排序扫描 `.blend` 文件。
 
-## 目录约定
+## 从 ReSyRIS 导入
+
+这里导入的是 ReSyRIS 的三维岩石模型和地表贴图，用于重新生成场景。准备以下目录结构，其中 `/path/to/resyris` 表示 ReSyRIS 根目录：
+
+```text
+/path/to/resyris/
+├── stone_models/
+│   ├── 01/
+│   │   ├── texturedMesh.obj
+│   │   ├── texturedMesh.mtl
+│   │   └── texture_1001.png
+│   ├── 02/
+│   └── ...                 # 36 个岩石目录
+└── oaisys/
+    └── volcano/
+        ├── volcano_diff_4k.png
+        ├── volcano_nor_dx_4k.png
+        └── volcano_disp_4k.png
+```
+
+保留 OBJ 对应的 MTL 和贴图文件，使模型导入时可以正确找到材质。目录中同时存在 OBJ 和 BLEND 时，工具优先使用 OBJ。
+
+在 `rock-synth` 仓库根目录执行，将两个占位路径替换为实际目录；Blender 安装目录中应包含 `blender` 可执行文件：
+
+```bash
+/path/to/blender/blender --background \
+  --python scripts/import_assets.py -- \
+  --rocks /path/to/resyris/stone_models --collection resyris \
+  --surface /path/to/resyris/oaisys/volcano
+```
+
+`--rocks` 指定原始岩石目录，`--collection resyris` 指定项目内部的集合名称，`--surface` 指定一套地表贴图。两类资产也可以分别导入，单独保留 `--rocks ... --collection resyris` 或 `--surface ...` 即可。路径含空格时请使用引号。
+
+工具规范化模型并内嵌贴图，将地表复制为标准通道名，翻转 DirectX 法线的绿色通道以转换为 OpenGL。原始目录保持不变，已有目标文件或地表目录不会被覆盖。导入结果如下，之后生成无需访问 ReSyRIS 原目录：
 
 ```text
 assets/
-├── manifests/          # 受 Git 管理的资产来源与格式约定
-├── manifest.lock.json  # 下载文件 SHA-256
-├── licenses/           # 许可说明与官方链接
-├── cache/              # 原始下载，不进入 Git
-└── prepared/           # 规范化 .blend 与指标，不进入 Git
+├── rocks/
+│   └── resyris/
+│       ├── 01.blend
+│       ├── 02.blend
+│       └── ...            # 共 36 个岩石文件
+└── surfaces/
+    └── volcano/
+        ├── basecolor.png
+        ├── normal.png
+        └── displacement.png
 ```
 
-manifest 必须记录 provider、asset ID、来源页、许可、首选格式、真实尺度、坐标约定和纹理色彩空间。lock 文件锁定实际下载文件，而不是短期下载 URL。
+## 岩石
 
-## 获取资产
+每个 `.blend` 文件是一块岩石，包含且仅包含一个名为 `rock` 的网格对象：
 
-先离线查看将要解析的下载：
+- Z-up，包围盒中心为原点，最长边规范化为 1，位置旋转为零、缩放为一。
+- 保留 UV、材质；图像依赖打包进 blend，移动目录后仍可加载。
+- 无相机、灯光、LOD、collider；碰撞凸包由生成时建立。
+- 实际米制尺寸由 `rocks.diameter` 指定，不依赖原扫描单位。
+- 不要求闭合网格，不输出精确体积或表面积。
+
+导入工具接受根目录下的一层岩石子目录；每个子目录放一个源模型和所需材质贴图。优先读取 OBJ，然后 GLB、GLTF、BLEND。同种格式存在多个模型时报错。源模型应已经是单块岩石、Z-up；工具合并多个组成网格，不猜测哪个对象是 LOD。
 
 ```bash
-python scripts/assets/download_assets.py --asset polyhaven:rock_09 --dry-run
+blender --background --python scripts/import_assets.py -- \
+  --rocks /path/to/raw_rocks --collection my_rocks
 ```
 
-确认后执行下载并更新 lock：
+导入结果为 `assets/rocks/my_rocks/<原子目录名>.blend`。不指定 `--collection` 时使用原始根目录名。已有文件时报错，不自动覆盖；不生成 `source.json`。不同集合可使用相同文件名，生成记录中的资产 ID 为 `集合名/文件名`（不含扩展名）。配置 `rocks.directory` 可以指向所有集合的根目录，也可以只指向一个集合。
+
+## 地表
+
+每个子目录使用固定通道名，支持 PNG、JPG、JPEG、EXR、TIF、TIFF：
+
+| 文件名（扩展名可不同） | 要求 |
+|---|---|
+| `basecolor.png` | 必需，sRGB |
+| `roughness.png` | 可选，Non-Color；缺失时固定粗糙度 |
+| `normal.png` | 可选，Non-Color，OpenGL (+Y) 切线空间 |
+| `displacement.png` | 可选，Non-Color；作为 bump 使用 |
+
+UV 与地形 XY 对齐，默认每 2 米重复一次。位移贴图只影响表面着色，不改变物理地形。
 
 ```bash
-for asset in rock_09 boulder_01 namaqualand_boulder_03 namaqualand_boulder_04; do
-  python scripts/assets/download_assets.py --asset "polyhaven:${asset}"
-done
+blender --background --python scripts/import_assets.py -- --surface /path/to/volcano
 ```
 
-工具拒绝无筛选的批量下载，避免意外获取大型 8K 资产。Poly Haven 与 ambientCG 的原始文件均为 CC0，但项目仍保留来源和许可记录。
+工具识别 `basecolor/diff/color`、`roughness/rough`、`normal/nor_`、`displacement/disp/height`；同一通道匹配多图时报错。文件名包含 `_dx` 或 `directx` 的法线会翻转绿色通道，其余应已经是 OpenGL。
 
-## 规范化岩石
+当前岩石集合为 `resyris`，地表为 `volcano`。岩石的贴图内嵌在 `.blend` 中，地表贴图为项目内的普通文件；没有项目外部文件依赖，也不附带来源记录。
 
-下载后通过 Blender 逐个规范化：
-
-```bash
-for asset in rock_09 boulder_01 namaqualand_boulder_03 namaqualand_boulder_04; do
-  blender --background --python scripts/assets/preprocess_rocks.py -- --asset "polyhaven:${asset}"
-done
-```
-
-预处理统一米制和 Z-up、应用旋转与缩放、重定位原点，检查网格闭合性，并计算真实尺寸、表面积和体积。输出 `.blend` 是 Blender 后端的内部规范资产；GLB 是交换和归档格式，PLY 保留原始扫描，OBJ 仅作为兼容格式。
-
-无法形成闭合网格或体积无效的资产不会进入对象体积真值基准。渲染网格与碰撞代理分离，物理布置优先使用 convex hull，复杂凹形资产可离线缓存 V-HACD。
-
-默认地表使用 Poly Haven 的 `dense_sand`。下载器会锁定 `.blend` 主文件及其纹理依赖，准备脚本从依赖中识别 PBR 通道并生成元数据：
-
-```bash
-python scripts/assets/download_assets.py --asset polyhaven:dense_sand
-python scripts/assets/prepare_surface.py --asset polyhaven:dense_sand
-```
-
-默认配置会检测 `assets/prepared/polyhaven/dense_sand/metadata.json`；存在时使用 Base Color、Roughness、OpenGL Normal 和 Displacement 贴图，不存在时回退到确定性的程序化沙地材质。
-
-## PBR 纹理
-
-- Base Color：sRGB PNG；
-- Roughness、Normal、AO：Non-Color PNG，normal 统一为 OpenGL 方向；
-- Height/Displacement：16-bit PNG/TIFF 或 float EXR；
-- 岩石按电介质处理，Metallic 固定为 0；
-- 纹理必须记录实际覆盖尺寸，避免不同对象出现错误 texel scale。
-
-渲染端使用 Nishita 天空提供环境补光，以有限角度的太阳灯产生柔和阴影，并通过 AgX 色彩管理保留浅色沙地与岩石高光细节。
-
-扫描岩石资产缺失、物理指标无效或材质缺失时生成流程会直接报错，不提供程序化或 hybrid 回退。
+导入产物不进入 Git；搬迁项目时应一并复制 `assets/rocks` 和 `assets/surfaces`，或重新导入。
