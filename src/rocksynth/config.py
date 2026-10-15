@@ -1,7 +1,7 @@
 """Small user-facing configuration; paths are relative to the project root."""
 
 from copy import deepcopy
-from math import isfinite
+from math import isclose, isfinite
 from pathlib import Path
 
 import yaml
@@ -10,18 +10,24 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = {
     "seed": 42,
     "num_scenes": 1,
-    "rocks": {"directory": "assets/rocks", "count": [12, 20], "diameter": [0.2, 0.8]},
-    "terrain": {"size": 10.0, "relief": 0.15, "textures": "assets/surfaces"},
+    "rocks": {"directory": "assets/rocks", "count": [12, 20], "diameter": [0.2, 0.8], "placement_radius": 3.5},
+    "terrain": {"size": 20.0, "relief": 0.15, "texture_size": 4.0, "textures": "assets/surfaces"},
     "camera": {
-        "fov": 60.0,
+        "fov": 50.0,
         "poses": [
-            {"position": [0, -4, 4], "look_at": [0, 0, 0]},
-            {"position": [4, 0, 4], "look_at": [0, 0, 0]},
-            {"position": [0, 4, 4], "look_at": [0, 0, 0]},
+            {"position": [0, -3, 4], "look_at": [0, 0, 0]},
+            {"position": [3, 0, 4], "look_at": [0, 0, 0]},
+            {"position": [0, 3, 4], "look_at": [0, 0, 0]},
         ],
     },
     "lighting": {"random": True},
-    "output": {"directory": "output/dataset", "resolution": [640, 480]},
+    "output": {
+        "directory": "output/dataset",
+        "resolution": [640, 480],
+        "format": "yolo",
+        "save_config": True,
+        "yolo": {"split": {"train": 1.0, "val": 0.0, "test": 0.0}},
+    },
 }
 
 
@@ -47,21 +53,24 @@ def _range(value, name, integer=False):
     return value
 
 
+def _merge(config, supplied, prefix=""):
+    if not isinstance(supplied, dict):
+        raise ConfigError(f"{prefix or 'configuration'} must be a mapping")
+    for key, value in supplied.items():
+        name = f"{prefix}.{key}" if prefix else str(key)
+        if key not in config:
+            raise ConfigError(f"unknown option: {name}")
+        if isinstance(config[key], dict):
+            _merge(config[key], value, name)
+        else:
+            config[key] = value
+
+
 def load_config(path=ROOT / "configs/default.yaml"):
     with Path(path).open(encoding="utf-8") as handle:
         supplied = yaml.safe_load(handle)
-    if not isinstance(supplied, dict):
-        raise ConfigError("configuration must be a mapping")
     config = deepcopy(DEFAULTS)
-    for key, value in supplied.items():
-        if key not in config:
-            raise ConfigError(f"unknown option: {key}")
-        if isinstance(config[key], dict):
-            if not isinstance(value, dict) or set(value) - set(config[key]):
-                raise ConfigError(f"invalid or unknown options in {key}")
-            config[key].update(value)
-        else:
-            config[key] = value
+    _merge(config, supplied)
     if type(config["seed"]) is not int or config["seed"] < 0:
         raise ConfigError("seed must be a non-negative integer")
     if type(config["num_scenes"]) is not int or config["num_scenes"] < 1:
@@ -74,6 +83,10 @@ def load_config(path=ROOT / "configs/default.yaml"):
         raise ConfigError("terrain.size must be positive")
     if not _number(terrain["relief"]) or terrain["relief"] < 0:
         raise ConfigError("terrain.relief must be non-negative")
+    if not _number(terrain["texture_size"]) or terrain["texture_size"] <= 0:
+        raise ConfigError("terrain.texture_size must be positive")
+    if not _number(rocks["placement_radius"]) or not 0 < rocks["placement_radius"] <= terrain["size"] / 2:
+        raise ConfigError("rocks.placement_radius must be positive and no larger than terrain.size / 2")
     camera = config["camera"]
     if not _number(camera["fov"]) or not 1 < camera["fov"] < 179:
         raise ConfigError("camera.fov must be between 1 and 179 degrees")
@@ -92,6 +105,14 @@ def load_config(path=ROOT / "configs/default.yaml"):
         raise ConfigError("output.resolution must be positive integers [width, height]")
     if type(config["lighting"]["random"]) is not bool:
         raise ConfigError("lighting.random must be true or false")
+    output = config["output"]
+    if output["format"] != "yolo":
+        raise ConfigError("output.format currently supports only 'yolo'")
+    if type(output["save_config"]) is not bool:
+        raise ConfigError("output.save_config must be true or false")
+    ratios = output["yolo"]["split"].values()
+    if not all(_number(value) and 0 <= value <= 1 for value in ratios) or not isclose(sum(ratios), 1, abs_tol=1e-8):
+        raise ConfigError("output.yolo.split ratios must be between 0 and 1 and sum to 1")
     for section, field in (("rocks", "directory"), ("terrain", "textures"), ("output", "directory")):
         value = config[section][field]
         if not isinstance(value, str) or not value.strip():

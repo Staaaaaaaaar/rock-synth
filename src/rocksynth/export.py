@@ -1,10 +1,54 @@
 """Direct YOLO segmentation export from one integer instance image."""
 
 from pathlib import Path
+from random import Random
 
 import cv2
 import numpy as np
+import yaml
 from PIL import Image
+
+from rocksynth.config import ConfigError
+
+SPLITS = ("train", "val", "test")
+
+
+def scene_splits(num_scenes, ratios, seed):
+    """Allocate whole scenes by largest remainder, then shuffle independently."""
+    total = sum(ratios.values())
+    targets = [num_scenes * ratios[name] / total for name in SPLITS]
+    counts = [int(value) for value in targets]
+    order = sorted(range(len(SPLITS)), key=lambda index: targets[index] - counts[index], reverse=True)
+    for index in order[: num_scenes - sum(counts)]:
+        counts[index] += 1
+    empty = [name for name, count in zip(SPLITS, counts, strict=True) if ratios[name] > 0 and count == 0]
+    if empty:
+        raise ConfigError(
+            f"No scenes allocated to {', '.join(empty)}; increase num_scenes, adjust ratios, or set them to 0"
+        )
+    assignments = [name for name, count in zip(SPLITS, counts, strict=True) for _ in range(count)]
+    Random(seed).shuffle(assignments)
+    return assignments
+
+
+def prepare_output(config):
+    options = config["output"]
+    assignments = scene_splits(config["num_scenes"], options["yolo"]["split"], config["seed"])
+    directory = Path(options["directory"])
+    if directory.exists() and any(directory.iterdir()):
+        raise FileExistsError(f"Output directory is not empty; choose another --output: {directory}")
+    directory.mkdir(parents=True, exist_ok=True)
+    dataset = {"path": str(directory.resolve()), "names": {0: "rock"}}
+    for split in SPLITS:
+        if split not in assignments:
+            continue
+        for kind in ("images", "labels"):
+            (directory / kind / split).mkdir(parents=True, exist_ok=True)
+        dataset[split] = f"images/{split}"
+    (directory / "data.yaml").write_text(yaml.safe_dump(dataset, sort_keys=False), encoding="utf-8")
+    if options["save_config"]:
+        (directory / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    return assignments
 
 
 def _join_contours(contours):
@@ -48,15 +92,17 @@ def yolo_labels(instance_ids):
     return labels
 
 
-def save_frame(output_dir, frame_id, rgb, instance_ids):
+def save_frame(output_dir, frame_id, rgb, instance_ids, split="train"):
+    if split not in SPLITS:
+        raise ValueError(f"Unknown dataset split: {split}")
     if rgb.dtype != np.uint8 or rgb.ndim != 3 or rgb.shape[2] not in (3, 4):
         raise ValueError("rgb must be a uint8 HxWx3/4 array")
     if rgb.shape[:2] != instance_ids.shape:
         raise ValueError("RGB and instance image shapes differ")
     labels = yolo_labels(instance_ids)
     directory = Path(output_dir)
-    image_path = directory / "images/train" / f"{frame_id}.png"
-    label_path = directory / "labels/train" / f"{frame_id}.txt"
+    image_path = directory / "images" / split / f"{frame_id}.png"
+    label_path = directory / "labels" / split / f"{frame_id}.txt"
     image_path.parent.mkdir(parents=True, exist_ok=True)
     label_path.parent.mkdir(parents=True, exist_ok=True)
     if image_path.exists() or label_path.exists():

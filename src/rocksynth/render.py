@@ -10,8 +10,8 @@ def render_views(bproc, config):
     bpy.context.scene.view_settings.view_transform = "AgX"
     bpy.context.scene.view_settings.look = "AgX - Medium High Contrast"
     bpy.context.scene.view_settings.exposure = -0.15
-    bproc.renderer.set_max_amount_of_samples(64)
-    bproc.renderer.set_noise_threshold(0.025)
+    bproc.renderer.set_max_amount_of_samples(96)
+    bproc.renderer.set_noise_threshold(0.015)
     # clean_up() keeps compositor settings. Remove only this call's temporary
     # segmentation nodes afterwards, so they do not accumulate across scenes.
     bpy.context.scene.use_nodes = True

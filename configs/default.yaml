@@ -1,24 +1,26 @@
 seed: 42
-num_scenes: 1
+num_scenes: 2
 
 rocks:
   directory: assets/rocks
   count: [12, 20]
   diameter: [0.2, 0.8] # horizontal maximum dimension, meters
+  placement_radius: 3.5 # rock field radius, independent of ground size
 
 terrain:
-  size: 10.0
+  size: 20.0
   relief: 0.15
+  texture_size: 4.0 # meters covered by one texture tile
   textures: assets/surfaces
 
 camera:
-  fov: 60 # horizontal field of view, degrees
+  fov: 50 # horizontal field of view, degrees
   poses: # absolute world XYZ, meters; Z up
-    - position: [0, -4, 4]
+    - position: [0, -3, 4]
       look_at: [0, 0, 0]
-    - position: [4, 0, 4]
+    - position: [3, 0, 4]
       look_at: [0, 0, 0]
-    - position: [0, 4, 4]
+    - position: [0, 3, 4]
       look_at: [0, 0, 0]
 
 lighting:
@@ -27,3 +29,10 @@ lighting:
 output:
   directory: output/dataset
   resolution: [640, 480]
+  format: yolo
+  save_config: true
+  yolo:
+    split: # scene ratios; all views of one scene stay together
+      train: 0.5
+      val: 0.5
+      test: 0.0

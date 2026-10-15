@@ -63,10 +63,12 @@ def build_scene(bproc, config, rock_paths, surfaces, seed):
     import bpy
 
     rng = Random(seed)
-    terrain = sample_terrain(config["terrain"], rng.getrandbits(64))
-    ground = create_terrain(bproc, terrain, rng.choice(surfaces))
+    terrain_seed = rng.getrandbits(64)
+    surface = rng.choice(surfaces)
+    terrain = sample_terrain(config["terrain"], terrain_seed, surface)
+    ground = create_terrain(bproc, terrain, surface)
     count = rng.randint(*config["rocks"]["count"])
-    rocks, asset_ids, footprints = [], [], []
+    rocks, footprints = [], []
     templates = {}
     for index in range(count):
         path = rng.choice(rock_paths)
@@ -93,8 +95,7 @@ def build_scene(bproc, config, rock_paths, surfaces, seed):
         footprints.append(hypot(*dimensions[:2]) / 2)
         obj.set_rotation_euler([0, 0, rng.uniform(0, 2 * pi)])
         rocks.append(obj)
-        asset_ids.append(path.relative_to(config["rocks"]["directory"]).with_suffix("").as_posix())
-    positions = _place(footprints, terrain.size * 0.35, rng)
+    positions = _place(footprints, config["rocks"]["placement_radius"], rng)
     for obj, (x, y), radius in zip(rocks, positions, footprints, strict=True):
         support = max(
             terrain.height_at(x + dx, y + dy)
@@ -134,19 +135,18 @@ def build_scene(bproc, config, rock_paths, surfaces, seed):
         if _penetration(obj, terrain) > 0.0031:
             raise RuntimeError(f"Terrain penetration: {obj.get_name()}")
     _lighting(bproc, config["lighting"]["random"], rng)
-    return asset_ids
 
 
 def _lighting(bproc, randomize, rng):
     import bpy
 
-    elevation = rng.uniform(0.45, 1.2) if randomize else 0.75
+    elevation = rng.uniform(0.45, 0.9) if randomize else 0.55
     azimuth = rng.uniform(-pi, pi) if randomize else -0.4
     sun = bproc.types.Light(light_type="SUN", name="sun")
     sun.set_rotation_euler([pi / 2 - elevation, 0, azimuth])
     sun.set_energy(rng.uniform(1.8, 3.2) if randomize else 2.4)
     sun.set_color([1.0, 0.94, 0.84])
-    sun.blender_obj.data.angle = 0.08
+    sun.blender_obj.data.angle = 0.04
     world = bpy.context.scene.world
     world.use_nodes = True
     nodes, links = world.node_tree.nodes, world.node_tree.links
@@ -155,8 +155,15 @@ def _lighting(bproc, randomize, rng):
     sky.sky_type = "NISHITA"
     sky.sun_elevation, sky.sun_rotation = elevation, azimuth
     sky.sun_disc = False
+    # Nishita is dark below the horizon; keep a low neutral ambient floor
+    # so custom downward views past the ground never see a pure black world.
+    ambient = nodes.new("ShaderNodeMixRGB")
+    ambient.blend_type = "ADD"
+    ambient.inputs[0].default_value = 1
+    ambient.inputs[2].default_value = (0.12, 0.14, 0.16, 1)
+    links.new(sky.outputs["Color"], ambient.inputs[1])
     background = nodes.new("ShaderNodeBackground")
     background.inputs["Strength"].default_value = 0.35
     output = nodes.new("ShaderNodeOutputWorld")
-    links.new(sky.outputs["Color"], background.inputs["Color"])
+    links.new(ambient.outputs["Color"], background.inputs["Color"])
     links.new(background.outputs["Background"], output.inputs["Surface"])

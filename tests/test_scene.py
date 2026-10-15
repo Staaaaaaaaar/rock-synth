@@ -3,9 +3,10 @@ from random import Random
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from rocksynth.scene import _place
-from rocksynth.terrain import Terrain, sample_terrain
+from rocksynth.terrain import Terrain, _texture_height, sample_terrain
 
 
 def test_placement_stays_inside_ground_with_clearance():
@@ -35,3 +36,37 @@ def test_terrain_seed_and_relief():
     second = sample_terrain({"size": 10, "relief": 0.15}, 42)
     assert np.array_equal(first.heights, second.heights)
     assert np.max(np.abs(first.heights)) == pytest.approx(0.15)
+
+
+def test_microgeometry_resolution_and_flat_ground():
+    terrain = sample_terrain({"size": 20, "relief": 0.15}, 42)
+    assert terrain.size / (terrain.heights.shape[0] - 1) <= 0.05
+    flat = sample_terrain({"size": 20, "relief": 0}, 42)
+    assert np.count_nonzero(flat.heights) == 0
+
+
+def test_texture_height_respects_uv_orientation_and_repeats(tmp_path):
+    path = tmp_path / "height.png"
+    Image.fromarray(np.array([[255, 255], [0, 0]], dtype=np.uint8)).save(path)
+    u = np.array([0.25, 0.25])
+    v = np.array([0.25, 0.75])
+    heights = _texture_height(path, u, v)
+    assert heights[0] == 0
+    assert heights[1] == 1
+    np.testing.assert_allclose(heights, _texture_height(path, u + 1, v + 1))
+
+
+def test_displacement_changes_collision_heightfield_reproducibly(tmp_path):
+    path = tmp_path / "height.png"
+    Image.fromarray(np.array([[0, 255], [255, 0]], dtype=np.uint8)).save(path)
+    config = {"size": 10, "relief": 0.15, "texture_size": 4}
+    maps = {"displacement": path}
+    first, second = sample_terrain(config, 42, maps), sample_terrain(config, 42, maps)
+    np.testing.assert_array_equal(first.heights, second.heights)
+    assert not np.array_equal(first.heights, sample_terrain(config, 42).heights)
+    assert np.max(np.abs(first.heights)) == pytest.approx(0.15)
+    # A ground vertex queried by physics must match the rendered mesh height.
+    n = first.heights.shape[0]
+    row, column = 20, 35
+    x, y = (column / (n - 1) - 0.5) * first.size, (row / (n - 1) - 0.5) * first.size
+    assert first.height_at(x, y) == pytest.approx(first.heights[row, column])

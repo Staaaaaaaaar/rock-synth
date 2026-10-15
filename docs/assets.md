@@ -68,7 +68,7 @@ blender --background --python scripts/import_assets.py -- \
   --rocks /path/to/raw_rocks --collection my_rocks
 ```
 
-导入结果为 `assets/rocks/my_rocks/<原子目录名>.blend`。不指定 `--collection` 时使用原始根目录名。已有文件时报错，不自动覆盖；不生成 `source.json`。不同集合可使用相同文件名，生成记录中的资产 ID 为 `集合名/文件名`（不含扩展名）。配置 `rocks.directory` 可以指向所有集合的根目录，也可以只指向一个集合。
+导入结果为 `assets/rocks/my_rocks/<原子目录名>.blend`。不指定 `--collection` 时使用原始根目录名。已有文件时报错，不自动覆盖；不生成 `source.json`。不同集合可使用相同文件名。配置 `rocks.directory` 可以指向所有集合的根目录，也可以只指向一个集合。
 
 ## 地表
 
@@ -77,11 +77,11 @@ blender --background --python scripts/import_assets.py -- \
 | 文件名（扩展名可不同） | 要求 |
 |---|---|
 | `basecolor.png` | 必需，sRGB |
-| `roughness.png` | 可选，Non-Color；缺失时固定粗糙度 |
+| `roughness.png` | 可选，Non-Color；缺失时使用高粗糙度的细微随机变化 |
 | `normal.png` | 可选，Non-Color，OpenGL (+Y) 切线空间 |
-| `displacement.png` | 可选，Non-Color；作为 bump 使用 |
+| `displacement.png` | 可选，Non-Color；用于细微几何位移及 bump |
 
-UV 与地形 XY 对齐，默认每 2 米重复一次。位移贴图只影响表面着色，不改变物理地形。
+`terrain.texture_size` 控制一张贴图覆盖的实际边长，默认 4 米。每个场景对整套 UV 做一致的旋转和平移，使颜色、切线法线与几何高度保持对齐。位移贴图按原始数值读取、使用稳健范围归一化后，参与厘米级地形起伏；更细的纹理通过法线与 bump 表现。地形网格在默认 20 米边长下间距约 5 厘米，最大分辨率为 513×513。渲染与物理碰撞共用该网格，最终总高度由 `terrain.relief` 限制；`relief: 0` 禁用几何起伏，但保留材质凹凸。
 
 ```bash
 blender --background --python scripts/import_assets.py -- --surface /path/to/volcano
