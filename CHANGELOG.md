@@ -1,5 +1,12 @@
 # 更新记录
 
+## 0.1.2
+
+- 新增 `output.metadata.asset_id` 开关，默认关闭，独立于配置快照开关。
+- 开启后在 `metadata/<图片ID>.json` 保存 `image_id` 和 `instances`；每个实例记录场景级 `instance_id` 与对应的岩石 `asset_id`。
+- JSON 平铺存放，不按 train/val/test 再分目录；实例顺序与 YOLO 标签行一致，跨视角保持场景实例 ID 稳定，空标签图像记录空实例列表。
+- 仅记录实际导出的实例，不修改标准 YOLO 标签，也不生成 `samples.jsonl`。补充文档、配置校验及映射准确性、空图像和文件冲突测试。
+
 ## 0.1.1
 
 - 调整固定俯拍机位和视场角，默认地面扩大到 20×20 米；新增 `rocks.placement_radius`，使岩石摆放范围独立于地面尺寸。
@@ -14,4 +21,4 @@
 ## 0.1.0
 
 - 建立轻量的岩石场景生成流程：目录扫描资产、固定多视角、BlenderProc 渲染、直接导出 YOLO segmentation。
-- 统一 ReSyRIS 岩石为内嵌贴图的单网格 `.blend`，地表使用标准命名贴图；移除 manifest 依赖、Spec 描述层和独立输出检查脚本。
+- 统一 ReSyRIS 岩石为内嵌贴图的单网格 `.blend`，地表使用标准命名贴图。

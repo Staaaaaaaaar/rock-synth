@@ -27,6 +27,7 @@ def test_defaults_and_project_relative_paths():
         {"terrain": {"texture_size": 0}},
         {"output": {"format": "coco"}},
         {"output": {"save_config": "false"}},
+        {"output": {"metadata": {"asset_id": "true"}}},
         {"output": {"yolo": {"split": {"train": 0.7, "val": 0.2}}}},
         {"output": {"yolo": {"split": {"train": 1.1, "val": -0.1}}}},
         {"output": {"yolo": {"split": {"train": float("nan")}}}},

@@ -1,5 +1,6 @@
 """Direct YOLO segmentation export from one integer instance image."""
 
+import json
 from pathlib import Path
 from random import Random
 
@@ -46,6 +47,8 @@ def prepare_output(config):
             (directory / kind / split).mkdir(parents=True, exist_ok=True)
         dataset[split] = f"images/{split}"
     (directory / "data.yaml").write_text(yaml.safe_dump(dataset, sort_keys=False), encoding="utf-8")
+    if options["metadata"]["asset_id"]:
+        (directory / "metadata").mkdir()
     if options["save_config"]:
         (directory / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return assignments
@@ -68,11 +71,11 @@ def _join_contours(contours):
     return polygon
 
 
-def yolo_labels(instance_ids):
+def _yolo_instances(instance_ids):
     if instance_ids.ndim != 2 or not np.issubdtype(instance_ids.dtype, np.integer) or np.any(instance_ids < 0):
         raise ValueError("instance_ids must be a non-negative integer HxW array")
     height, width = instance_ids.shape
-    labels = []
+    instances = []
     for rock_id in np.unique(instance_ids):
         if rock_id == 0:
             continue
@@ -88,25 +91,41 @@ def yolo_labels(instance_ids):
             continue
         contours.sort(key=lambda c: (-abs(cv2.contourArea(c)), int(c[:, 0].min()), int(c[:, 1].min())))
         polygon = _join_contours(contours).astype(float) / [width, height]
-        labels.append("0 " + " ".join(f"{v:.6f}" for v in polygon.flat))
-    return labels
+        instances.append((int(rock_id), "0 " + " ".join(f"{v:.6f}" for v in polygon.flat)))
+    return instances
 
 
-def save_frame(output_dir, frame_id, rgb, instance_ids, split="train"):
+def yolo_labels(instance_ids):
+    return [label for _, label in _yolo_instances(instance_ids)]
+
+
+def save_frame(output_dir, frame_id, rgb, instance_ids, split="train", asset_ids=None):
     if split not in SPLITS:
         raise ValueError(f"Unknown dataset split: {split}")
     if rgb.dtype != np.uint8 or rgb.ndim != 3 or rgb.shape[2] not in (3, 4):
         raise ValueError("rgb must be a uint8 HxWx3/4 array")
     if rgb.shape[:2] != instance_ids.shape:
         raise ValueError("RGB and instance image shapes differ")
-    labels = yolo_labels(instance_ids)
+    instances = _yolo_instances(instance_ids)
+    labels = [label for _, label in instances]
+    records = []
+    if asset_ids is not None:
+        for instance_id, _ in instances:
+            if instance_id not in asset_ids:
+                raise ValueError(f"Missing asset ID for instance {instance_id}")
+            records.append({"instance_id": instance_id, "asset_id": asset_ids[instance_id]})
     directory = Path(output_dir)
     image_path = directory / "images" / split / f"{frame_id}.png"
     label_path = directory / "labels" / split / f"{frame_id}.txt"
+    asset_path = directory / "metadata" / f"{frame_id}.json"
     image_path.parent.mkdir(parents=True, exist_ok=True)
     label_path.parent.mkdir(parents=True, exist_ok=True)
-    if image_path.exists() or label_path.exists():
+    if any(path.exists() for path in (image_path, label_path, asset_path)):
         raise FileExistsError(f"Frame already exists: {frame_id}")
     Image.fromarray(rgb[:, :, :3]).save(image_path)
     label_path.write_text("\n".join(labels) + ("\n" if labels else ""), encoding="utf-8")
+    if asset_ids is not None:
+        asset_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata = {"image_id": frame_id, "instances": records}
+        asset_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return len(labels)

@@ -26,6 +26,7 @@ DEFAULTS = {
         "resolution": [640, 480],
         "format": "yolo",
         "save_config": True,
+        "metadata": {"asset_id": False},
         "yolo": {"split": {"train": 1.0, "val": 0.0, "test": 0.0}},
     },
 }
@@ -110,6 +111,8 @@ def load_config(path=ROOT / "configs/default.yaml"):
         raise ConfigError("output.format currently supports only 'yolo'")
     if type(output["save_config"]) is not bool:
         raise ConfigError("output.save_config must be true or false")
+    if type(output["metadata"]["asset_id"]) is not bool:
+        raise ConfigError("output.metadata.asset_id must be true or false")
     ratios = output["yolo"]["split"].values()
     if not all(_number(value) and 0 <= value <= 1 for value in ratios) or not isclose(sum(ratios), 1, abs_tol=1e-8):
         raise ConfigError("output.yolo.split ratios must be between 0 and 1 and sum to 1")

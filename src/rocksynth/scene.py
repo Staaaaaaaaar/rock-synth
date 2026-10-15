@@ -69,6 +69,7 @@ def build_scene(bproc, config, rock_paths, surfaces, seed):
     ground = create_terrain(bproc, terrain, surface)
     count = rng.randint(*config["rocks"]["count"])
     rocks, footprints = [], []
+    asset_ids = {}
     templates = {}
     for index in range(count):
         path = rng.choice(rock_paths)
@@ -83,6 +84,7 @@ def build_scene(bproc, config, rock_paths, surfaces, seed):
             obj = templates[path].duplicate()
         obj.set_name(f"rock_{index + 1:03d}")
         obj.set_cp("rock_id", index + 1)
+        asset_ids[index + 1] = path.relative_to(config["rocks"]["directory"]).with_suffix("").as_posix()
         obj.set_rotation_euler([0, 0, 0])
         bpy.context.view_layer.update()
         diameter = exp(rng.uniform(*map(log, config["rocks"]["diameter"])))
@@ -135,6 +137,7 @@ def build_scene(bproc, config, rock_paths, surfaces, seed):
         if _penetration(obj, terrain) > 0.0031:
             raise RuntimeError(f"Terrain penetration: {obj.get_name()}")
     _lighting(bproc, config["lighting"]["random"], rng)
+    return asset_ids
 
 
 def _lighting(bproc, randomize, rng):

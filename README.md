@@ -1,6 +1,6 @@
 # RockSynth
 
-当前版本：`0.1.1`，变更见 [更新记录](CHANGELOG.md)。
+当前版本：`0.1.2`，变更见 [更新记录](CHANGELOG.md)。
 
 轻量的岩石实例分割合成数据工具。使用 BlenderProc 创建场景，同一场景从配置中的多个位置拍摄，直接保存 RGB 和 YOLO segmentation 标签。
 
@@ -55,7 +55,7 @@ blenderproc run --custom-blender-path /path/to/blender \
 - 未填写字段使用内部默认值；未知字段报错。配置相对路径统一相对仓库根目录。
 - 每场景使用 `seed + 场景序号`。输出目录必须为空，避免混入或覆盖已有数据。
 
-输出格式通过 `output.format` 选择，目前仅支持 `yolo`。不生成 `samples.jsonl`；`output.save_config` 控制是否保存 `config.yaml`，默认 `true`。
+输出格式通过 `output.format` 选择，目前仅支持 `yolo`。不生成 `samples.jsonl`；`output.save_config` 控制是否保存 `config.yaml`，默认 `true`。`output.metadata.asset_id` 控制是否记录每个已导出实例对应的岩石资产，默认 `false`；开启时额外保存 `metadata/<图片ID>.json`，包含 `image_id` 和 `instances`，每个实例记录 `instance_id` 与 `asset_id`（例如 `resyris/01`）。
 
 例如，100 个场景按 80% / 10% / 10% 分为训练、验证、测试集：
 
@@ -66,6 +66,8 @@ output:
   resolution: [640, 480]
   format: yolo
   save_config: false
+  metadata:
+    asset_id: false
   yolo:
     split:
       train: 0.8

@@ -1,3 +1,5 @@
+import json
+
 import cv2
 import numpy as np
 import pytest
@@ -40,6 +42,7 @@ def test_multiple_ids_remain_distinct_and_file_pair_is_saved(tmp_path):
     assert save_frame(tmp_path, "0000-0000", rgb, mask) == 2
     assert Image.open(tmp_path / "images/train/0000-0000.png").size == (40, 40)
     assert len((tmp_path / "labels/train/0000-0000.txt").read_text().splitlines()) == 2
+    assert not (tmp_path / "metadata").exists()
     with pytest.raises(FileExistsError):
         save_frame(tmp_path, "0000-0000", rgb, mask)
 
@@ -108,3 +111,60 @@ def test_disabled_splits_are_not_exported(tmp_path):
     dataset = yaml.safe_load((tmp_path / "data.yaml").read_text())
     assert "val" not in dataset and "test" not in dataset
     assert not (tmp_path / "images/val").exists()
+
+
+def test_asset_ids_match_exported_label_order_and_skip_invisible_or_tiny_instances(tmp_path):
+    mask = np.zeros((60, 60), dtype=np.int32)
+    mask[0, 0] = 3  # Too small for a polygon, so no record is needed.
+    mask[3:15, 3:15] = 7
+    mask[20:30, 3:15] = 7  # Disconnected pieces are still one instance.
+    mask[35:50, 35:50] = 10
+    assets = {7: "resyris/02", 10: "resyris/02", 99: "resyris/unused"}
+    rgb = np.zeros((60, 60, 3), dtype=np.uint8)
+    assert save_frame(tmp_path, "0000-0000", rgb, mask, split="val", asset_ids=assets) == 2
+    record = json.loads((tmp_path / "metadata/0000-0000.json").read_text())
+    assert record == {
+        "image_id": "0000-0000",
+        "instances": [
+            {"instance_id": 7, "asset_id": "resyris/02"},
+            {"instance_id": 10, "asset_id": "resyris/02"},
+        ],
+    }
+    assert len((tmp_path / "labels/val/0000-0000.txt").read_text().splitlines()) == len(record["instances"])
+    assert not (tmp_path / "samples.jsonl").exists()
+
+
+def test_empty_frame_has_empty_asset_record(tmp_path):
+    mask = np.zeros((10, 10), dtype=np.int32)
+    rgb = np.zeros((10, 10, 3), dtype=np.uint8)
+    save_frame(tmp_path, "empty", rgb, mask, asset_ids={1: "resyris/01"})
+    assert json.loads((tmp_path / "metadata/empty.json").read_text()) == {"image_id": "empty", "instances": []}
+
+
+def test_missing_asset_mapping_fails_before_writing_frame(tmp_path):
+    mask = np.ones((10, 10), dtype=np.int32)
+    with pytest.raises(ValueError, match="Missing asset ID for instance 1"):
+        save_frame(tmp_path, "missing", np.zeros((10, 10, 3), dtype=np.uint8), mask, asset_ids={})
+    assert not list(tmp_path.rglob("*"))
+
+
+def test_asset_record_collision_does_not_overwrite_existing_data(tmp_path):
+    folder = tmp_path / "metadata"
+    folder.mkdir(parents=True)
+    path = folder / "existing.json"
+    path.write_text("[]")
+    with pytest.raises(FileExistsError):
+        save_frame(tmp_path, "existing", np.zeros((10, 10, 3), dtype=np.uint8), np.ones((10, 10), dtype=int))
+    assert path.read_text() == "[]"
+
+
+def test_metadata_directory_is_flat_and_independent_of_config_snapshot(tmp_path):
+    config = load_config()
+    config["num_scenes"] = 2
+    config["output"].update({"directory": str(tmp_path), "save_config": False})
+    config["output"]["metadata"]["asset_id"] = True
+    config["output"]["yolo"]["split"] = {"train": 0.5, "val": 0.5, "test": 0}
+    prepare_output(config)
+    assert (tmp_path / "metadata").is_dir()
+    assert not list((tmp_path / "metadata").iterdir())
+    assert not (tmp_path / "config.yaml").exists()

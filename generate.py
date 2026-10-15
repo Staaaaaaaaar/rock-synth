@@ -41,13 +41,20 @@ def main():
         import bpy
 
         bpy.context.scene.cycles.seed = seed % (2**31)
-        build_scene(bproc, config, rock_paths, surfaces, seed)
+        asset_ids = build_scene(bproc, config, rock_paths, surfaces, seed)
         images, masks = render_views(bproc, config)
         if len(images) != len(config["camera"]["poses"]) or len(masks) != len(images):
             raise RuntimeError("Renderer returned an unexpected number of views")
         for view_index, (rgb, mask) in enumerate(zip(images, masks, strict=True)):
             frame_id = f"{scene_index:04d}-{view_index:04d}"
-            save_frame(output, frame_id, np.asarray(rgb), np.asarray(mask), split=split)
+            save_frame(
+                output,
+                frame_id,
+                np.asarray(rgb),
+                np.asarray(mask),
+                split=split,
+                asset_ids=asset_ids if config["output"]["metadata"]["asset_id"] else None,
+            )
         print(f"Scene {scene_index + 1}/{config['num_scenes']}: {len(images)} views -> {split} in {output}")
 
 

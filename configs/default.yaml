@@ -31,6 +31,8 @@ output:
   resolution: [640, 480]
   format: yolo
   save_config: true
+  metadata:
+    asset_id: false # instance -> rock asset mapping
   yolo:
     split: # scene ratios; all views of one scene stay together
       train: 0.5
